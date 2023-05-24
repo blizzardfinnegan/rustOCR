@@ -3,6 +3,7 @@ use async_std::sync::*;
 use rppal::gpio::{Gpio,OutputPin,InputPin,Trigger,Level};
 use std::thread;
 use std::result::Result;
+use futures::executor;
 use std::fmt;
 
 const TRAVEL_DISTANCE_FACTOR:f64 = 0.95;
@@ -41,12 +42,12 @@ pub struct FixtureInitError;
 
 impl fmt::Display for GpioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bad GPIO settings for fixture")
+        write!(f, "Bad fixture GPIO settings")
     }
 }
 impl fmt::Display for FixtureInitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid PWM value for fixture")
+        write!(f, "Invalid fixture PWM value")
     }
 }
 
@@ -74,24 +75,22 @@ impl Fixture{
         match possible_run_pin{
             Ok(run_pin) =>{
                 _ = run_pin.into_input_pulldown().set_async_interrupt(Trigger::Both, |switch_state|{
-                    _ = async{
-                        let mut move_allowed = MOVE_LOCK.write().await;
-                        match switch_state {
-                            Level::Low=> {
-                                *move_allowed = false;
-                            }
-                            Level::High => {
-                                *move_allowed = true;
-                            }
-                            
-                        };
+                    let mut move_allowed = executor::block_on(MOVE_LOCK.write());
+                    match switch_state {
+                        Level::Low=> {
+                            *move_allowed = false;
+                        }
+                        Level::High => {
+                            *move_allowed = true;
+                        }
+                        
                     };
                 });
             },
             Err(_) => {}
         }
 
-        while let Err(_) = output.find_distance() {};
+        while let Err(_) = output.find_distance(){};
 
         return Ok(output);
     }
@@ -101,16 +100,24 @@ impl Fixture{
                (self.upper_limit.as_mut(), self.motor_direction.as_mut(), self.motor_enable.as_mut()){
             if upper_limit.is_high(){
                 {
+                    while !*executor::block_on(MOVE_LOCK.read()) {}
                     motor_direction_pin.set_low();
                     motor_enable_pin.set_high()
                 }
                 thread::sleep(Duration::from_millis(500));
                 motor_enable_pin.set_low()
             }
+            while !*executor::block_on(MOVE_LOCK.read()){}
             motor_direction_pin.set_high();
             motor_enable_pin.set_high();
             let mut counter = 0;
             for _ in 0..TIMEOUT {
+                while !*executor::block_on(MOVE_LOCK.read()){
+                    motor_enable_pin.set_low();
+                }
+                if *executor::block_on(MOVE_LOCK.read()) && motor_enable_pin.is_set_low(){
+                    motor_enable_pin.set_high();
+                }
                 if upper_limit.is_high() { break; }
                 counter += 1;
                 thread::sleep(POLL_DELAY);
@@ -129,9 +136,16 @@ impl Fixture{
         //Time travel time to lower limit switch 
         if let (Some(lower_limit),            Some(motor_direction_pin),      Some(motor_enable_pin)) = 
                (self.lower_limit.as_mut(), self.motor_direction.as_mut(), self.motor_enable.as_mut()){
+            while !*executor::block_on(MOVE_LOCK.read()){}
             motor_direction_pin.set_low();
             motor_enable_pin.set_high();
             for _ in 0..TIMEOUT{
+                while !*executor::block_on(MOVE_LOCK.read()){
+                    motor_enable_pin.set_low();
+                }
+                if *executor::block_on(MOVE_LOCK.read()) && motor_enable_pin.is_set_low(){
+                    motor_enable_pin.set_high();
+                }
                 if lower_limit.is_high() { break; }
                 down_counter += 1;
                 thread::sleep(POLL_DELAY);
@@ -141,9 +155,16 @@ impl Fixture{
         //Time travel time to upper limit switch 
         if let (Some(upper_limit),            Some(motor_direction_pin),      Some(motor_enable_pin)) = 
                (self.upper_limit.as_mut(), self.motor_direction.as_mut(), self.motor_enable.as_mut()){
+            while !*executor::block_on(MOVE_LOCK.read()){}
             motor_direction_pin.set_low();
             motor_enable_pin.set_high();
             for _ in 0..TIMEOUT{
+                while !*executor::block_on(MOVE_LOCK.read()){
+                    motor_enable_pin.set_low();
+                }
+                if *executor::block_on(MOVE_LOCK.read()) && motor_enable_pin.is_set_low(){
+                    motor_enable_pin.set_high();
+                }
                 if upper_limit.is_high() { break; }
                 up_counter += 1;
                 thread::sleep(POLL_DELAY);
@@ -178,14 +199,30 @@ impl Fixture{
 
         if let (Some(motor_direction_pin),      Some(motor_enable_pin)) = 
                (self.motor_direction.as_mut(), self.motor_enable.as_mut()){
+            while !*executor::block_on(MOVE_LOCK.read()){}
             motor_direction_pin.set_low();
             motor_enable_pin.set_high();
             for _ in 0..move_polls{
+                while !*executor::block_on(MOVE_LOCK.read()){
+                    motor_enable_pin.set_low();
+                }
+                if *executor::block_on(MOVE_LOCK.read()) && motor_enable_pin.is_set_low(){
+                    motor_enable_pin.set_high();
+                }
                 if limit_sense.is_high() { break; }
                 thread::sleep(POLL_DELAY);
             }
         }
 
         return limit_sense.is_high();
+    }
+
+    pub fn push_button(&mut self){
+        if let Some(piston_enable) = self.piston_enable.as_mut(){
+            while !*executor::block_on(MOVE_LOCK.read()){}
+            piston_enable.set_high();
+            thread::sleep(Duration::from_secs(1));
+            piston_enable.set_low();
+        }
     }
 }
