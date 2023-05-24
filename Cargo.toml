@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 async-std = "1.12.0"
+chrono = "0.4.24"
 config = "0.13.3"
 derivative = "2.2.0"
 fern = "0.6.2"
