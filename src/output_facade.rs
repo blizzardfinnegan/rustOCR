@@ -33,10 +33,12 @@ impl TestState{
         if !all_data.contains_key(&device_name){
             all_data.insert(device_name.to_string(),HashMap::new());
         }
+        //Device object should be created at this point, unwrap is safe
         let device_data = all_data.get_mut(&device_name).unwrap();
         if !device_data.contains_key(&value.into()){
             device_data.insert(OrderedFloat(value), 1);
         }
+        //Value object should be created at this point, unwrap is safe
         else{
             let stored_value = device_data.get_mut(&value.into()).unwrap();
             *stored_value += 1;
@@ -86,6 +88,7 @@ impl OutputFile{
             let mut pass_iteration_count = 0;
             value_map.iter().for_each(|(value,count)|{
                 iteration_count += count;
+                //                          unwraps are required and safe here
                 if value.into_inner() > lower_bound.unwrap() && value.into_inner() < upper_bound.unwrap(){
                     pass_iteration_count += count;
                 }
@@ -93,6 +96,7 @@ impl OutputFile{
             });
             let mut counter = 0;
             for value in &value_list{
+                //Value list is created from keys in map, unwrap is safe
                 counter += value_map.get(value).unwrap();
                 index_list.push(counter.clone());
             }

@@ -60,9 +60,9 @@ impl FrameGrabber{
         return output;
     }
 
-    fn grab(&self) -> Mat{
+    fn grab(&self) -> Option<Mat>{
         let mut image_queue = self.image_queue.lock().unwrap();
-        image_queue.pop_front().unwrap()
+        image_queue.pop_front()
     }
 
     fn burst(&self) -> Vec<Mat>{
@@ -155,16 +155,25 @@ impl Camera{
     }
 
     pub fn set_crop(&mut self) -> Result<(),opencv::Error>{
-        match select_roi(&self.camera.grab(), false, false){
-            Err(error) => { return Err(error); }
-            Ok(rect) => {
-                let mut new_settings = Config::builder().add_source(self.settings.clone());
-                new_settings = new_settings.set_override(CROP_X, rect.x).unwrap();
-                new_settings = new_settings.set_override(CROP_Y, rect.y).unwrap();
-                new_settings = new_settings.set_override(CROP_WIDTH, rect.width).unwrap();
-                new_settings = new_settings.set_override(CROP_HEIGHT, rect.height).unwrap();
-                self.settings = new_settings.build().unwrap();
-                Ok(())
+        let temp = &self.camera.grab();
+        match temp{
+            Some(image) => {
+                match select_roi(image, false, false){
+                    Err(error) => { return Err(error); }
+                    Ok(rect) => {
+                        let mut new_settings = Config::builder().add_source(self.settings.clone());
+                        new_settings = new_settings.set_override(CROP_X, rect.x).unwrap();
+                        new_settings = new_settings.set_override(CROP_Y, rect.y).unwrap();
+                        new_settings = new_settings.set_override(CROP_WIDTH, rect.width).unwrap();
+                        new_settings = new_settings.set_override(CROP_HEIGHT, rect.height).unwrap();
+                        self.settings = new_settings.build().unwrap();
+                        Ok(())
+                    }
+                }
+            }
+            None => {
+                log::error!("Image unavailable!");
+                Err(opencv::Error { code: 0, message:"Invalid image!".to_string() })
             }
         }
     }

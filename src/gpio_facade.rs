@@ -37,14 +37,8 @@ impl Drop for Fixture{
 }
 
 #[derive(Debug,Clone)]
-pub struct GpioError;
 pub struct FixtureInitError;
 
-impl fmt::Display for GpioError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bad fixture GPIO settings")
-    }
-}
 impl fmt::Display for FixtureInitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Invalid fixture PWM value")
@@ -53,49 +47,105 @@ impl fmt::Display for FixtureInitError {
 
 impl Fixture{
     //modify implementation to allow for multiple fixtures simultaneously
-    pub fn new() -> Result<Self,GpioError>{
-        let gpio = Gpio::new().unwrap();
-        let mut output = Self{
-            gpio_api:gpio,
-            travel_distance: u32::MAX,
-            motor_direction: None,
-            motor_enable: None,
-            piston_enable: None,
-            upper_limit: None,
-            lower_limit: None,
-        };
+    pub fn new() -> Result<Self,FixtureInitError>{
+        let possible_gpio = Gpio::new();
+        if let Ok(gpio) = possible_gpio{
+            let mut output = Self{
+                gpio_api:gpio,
+                travel_distance: u32::MAX,
+                motor_direction: None,
+                motor_enable: None,
+                piston_enable: None,
+                upper_limit: None,
+                lower_limit: None,
+            };
 
-        output.motor_enable = Some(output.gpio_api.get(MOTOR_ENABLE_ADDR).unwrap().into_output_low());
-        output.motor_direction = Some(output.gpio_api.get(MOTOR_DIRECTION_ADDR).unwrap().into_output_low());
-        output.piston_enable = Some(output.gpio_api.get(PISTON_ADDR).unwrap().into_output_low());
-        output.upper_limit = Some(output.gpio_api.get(UPPER_LIMIT_ADDR).unwrap().into_input_pulldown());
-        output.lower_limit = Some(output.gpio_api.get(LOWER_LIMIT_ADDR).unwrap().into_input_pulldown());
+            let mut temp = output.gpio_api.get(MOTOR_ENABLE_ADDR);
+            match temp{
+                Ok(pin) =>{
+                    output.motor_enable = Some(pin.into_output_low());
+                }
+                Err(_) => {
+                    log::error!("Motor enable pin unavailable!");
+                    return Err(FixtureInitError)
+                }
+            }
+            temp = output.gpio_api.get(MOTOR_DIRECTION_ADDR);
+            match temp{
+                Ok(pin) =>{
+                    output.motor_direction = Some(pin.into_output_low());
+                }
+                Err(_) => {
+                    log::error!("Motor direction pin unavailable!");
+                    return Err(FixtureInitError)
+                }
+            }
+            temp = output.gpio_api.get(PISTON_ADDR);
+            match temp{
+                Ok(pin) =>{
+                    output.piston_enable = Some(pin.into_output_low());
+                }
+                Err(_) => {
+                    log::error!("Motor direction pin unavailable!");
+                    return Err(FixtureInitError)
+                }
+            }
+            temp = output.gpio_api.get(UPPER_LIMIT_ADDR);
+            match temp{
+                Ok(pin) =>{
+                    output.upper_limit = Some(pin.into_input_pulldown());
+                }
+                Err(_) => {
+                    log::error!("Upper limit pin unavailable!");
+                    return Err(FixtureInitError)
+                }
+            }
+            temp = output.gpio_api.get(LOWER_LIMIT_ADDR);
+            match temp{
+                Ok(pin) =>{
+                    output.lower_limit = Some(pin.into_input_pulldown());
+                }
+                Err(_) => {
+                    log::error!("Lower limit pin unavailable!");
+                    return Err(FixtureInitError)
+                }
+            }
 
-        let possible_run_pin = output.gpio_api.get(RUN_SWITCH_ADDR);
-        match possible_run_pin{
-            Ok(run_pin) =>{
-                _ = run_pin.into_input_pulldown().set_async_interrupt(Trigger::Both, |switch_state|{
-                    let mut move_allowed = executor::block_on(MOVE_LOCK.write());
-                    match switch_state {
-                        Level::Low=> {
-                            *move_allowed = false;
-                        }
-                        Level::High => {
-                            *move_allowed = true;
-                        }
-                        
-                    };
-                });
-            },
-            Err(_) => {}
+            let possible_run_pin = output.gpio_api.get(RUN_SWITCH_ADDR);
+            match possible_run_pin{
+                Ok(run_pin) =>{
+                    _ = run_pin.into_input_pulldown().set_async_interrupt(Trigger::Both, |switch_state|{
+                        let mut move_allowed = executor::block_on(MOVE_LOCK.write());
+                        match switch_state {
+                            Level::Low=> {
+                                *move_allowed = false;
+                            }
+                            Level::High => {
+                                *move_allowed = true;
+                            }
+                            
+                        };
+                    });
+                },
+                Err(_) => {
+                    log::error!("Could not get run switch GPIO pin!");
+                }
+            }
+            log::info!("GPIO initialised successfully! Finding fixture travel distance.");
+
+            match output.find_distance(){
+                Err(error) => return Err(error),
+                Ok(_) => return Ok(output)
+            };
         }
-
-        while let Err(_) = output.find_distance(){};
-
-        return Ok(output);
+        else { 
+            log::error!("Gpio could not be opened! Did you run with 'sudo'? ");
+            return Err(FixtureInitError) 
+        }
     }
 
     fn reset_arm(&mut self) -> u16{
+        log::debug!("Resetting arm...");
         if let (Some(upper_limit),          Some(motor_direction_pin),      Some(motor_enable_pin)) = 
                (self.upper_limit.as_mut(), self.motor_direction.as_mut(), self.motor_enable.as_mut()){
             if upper_limit.is_high(){
@@ -151,6 +201,7 @@ impl Fixture{
                 thread::sleep(POLL_DELAY);
             }
         }
+        log::debug!("Travel down distance: {}",down_counter);
 
         //Time travel time to upper limit switch 
         if let (Some(upper_limit),            Some(motor_direction_pin),      Some(motor_enable_pin)) = 
@@ -170,6 +221,7 @@ impl Fixture{
                 thread::sleep(POLL_DELAY);
             }
         }
+        log::debug!("Travel up distance: {}",up_counter);
 
         self.travel_distance = std::cmp::min(up_counter,down_counter);
 
@@ -193,7 +245,7 @@ impl Fixture{
             }
         }
 
-        if limit_sense.is_high() { return true; }
+        if limit_sense.is_high() { log::debug!("Fixture already at proper limit switch!"); return true; }
 
         let move_polls = (self.travel_distance as f64 * TRAVEL_DISTANCE_FACTOR) as u64;
 
@@ -212,6 +264,10 @@ impl Fixture{
                 if limit_sense.is_high() { break; }
                 thread::sleep(POLL_DELAY);
             }
+        }
+
+        if limit_sense.is_low(){
+            log::warn!("Fixture did not complete travel! Inspect fixture if this warning shows consistently.");
         }
 
         return limit_sense.is_high();
