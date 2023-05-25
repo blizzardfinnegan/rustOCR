@@ -25,6 +25,7 @@ pub struct Camera{
     settings: Config,
     camera: FrameGrabber,
     name: String,
+    serial: String,
     ocr: LepTess,
     active: bool
 }
@@ -108,6 +109,7 @@ impl Camera{
             name,
             ocr,
             active: true,
+            serial:String::new()
         })
     }
 
@@ -115,7 +117,7 @@ impl Camera{
         _ = imshow("Test image", &imread(&self.complete_process(),IMREAD_UNCHANGED).unwrap());
     }
 
-    fn complete_process(&self) -> String{
+    pub fn complete_process(&self) -> String{
         let images = self.camera.burst();
         let mut final_image = images[0].clone();
         for mut image in images{
@@ -155,8 +157,7 @@ impl Camera{
     }
 
     pub fn set_crop(&mut self) -> Result<(),opencv::Error>{
-        let temp = &self.camera.grab();
-        match temp{
+        match &self.camera.grab(){
             Some(image) => {
                 match select_roi(image, false, false){
                     Err(error) => { return Err(error); }
@@ -195,4 +196,7 @@ impl Camera{
         _ = self.ocr.set_image(file_location);
         return str::parse(&self.ocr.get_utf8_text().unwrap()).unwrap()
     }
+
+    pub fn get_serial(&mut self) -> String { self.serial.clone() }
+    pub fn set_serial(&mut self, new_name:String) { self.serial = new_name; }
 }

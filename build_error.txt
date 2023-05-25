@@ -1,0 +1,53 @@
+    Checking rust_ocr v0.1.0 (/home/pi/Desktop/rustOCR)
+error[E0277]: `*mut TessBaseAPI` cannot be shared between threads safely
+   --> src/main.rs:157:31
+    |
+157 |                   thread::spawn(move||{
+    |  _________________-------------_^
+    | |                 |
+    | |                 required by a bound introduced by this call
+158 | |                     let ocr_result = camera.parse_image(camera.complete_process());
+159 | |                     //values.push(ocr_result.clone());
+160 | |                     state.add_iteration(camera.get_serial().clone(), ocr_result);
+161 | |                 });
+    | |_________________^ `*mut TessBaseAPI` cannot be shared between threads safely
+    |
+    = help: within `&mut image_facade::Camera`, the trait `Sync` is not implemented for `*mut TessBaseAPI`
+note: required because it appears within the type `TessBaseApi`
+   --> /home/pi/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tesseract-plumbing-0.8.0/src/tess_base_api.rs:25:12
+    |
+25  | pub struct TessBaseApi(*mut tesseract_sys::TessBaseAPI);
+    |            ^^^^^^^^^^^
+note: required because it appears within the type `TessApi`
+   --> /home/pi/.cargo/registry/src/index.crates.io-6f17d22bba15001f/leptess-0.14.0/src/tesseract.rs:26:12
+    |
+26  | pub struct TessApi {
+    |            ^^^^^^^
+note: required because it appears within the type `LepTess`
+   --> /home/pi/.cargo/registry/src/index.crates.io-6f17d22bba15001f/leptess-0.14.0/src/lib.rs:95:12
+    |
+95  | pub struct LepTess {
+    |            ^^^^^^^
+note: required because it appears within the type `Camera`
+   --> src/image_facade.rs:24:12
+    |
+24  | pub struct Camera{
+    |            ^^^^^^
+    = note: required because it appears within the type `&mut Camera`
+    = note: required for `&&mut image_facade::Camera` to implement `std::marker::Send`
+note: required because it's used within this closure
+   --> src/main.rs:157:31
+    |
+157 |                 thread::spawn(move||{
+    |                               ^^^^^^
+note: required by a bound in `std::thread::spawn`
+   --> /home/pi/.rustup/toolchains/nightly-aarch64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs:683:8
+    |
+680 | pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+    |        ----- required by a bound in this function
+...
+683 |     F: Send + 'static,
+    |        ^^^^ required by this bound in `spawn`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `rust_ocr` (bin "rust_ocr") due to previous error

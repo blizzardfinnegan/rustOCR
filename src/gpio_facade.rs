@@ -60,8 +60,7 @@ impl Fixture{
                 lower_limit: None,
             };
 
-            let mut temp = output.gpio_api.get(MOTOR_ENABLE_ADDR);
-            match temp{
+            match output.gpio_api.get(MOTOR_ENABLE_ADDR){
                 Ok(pin) =>{
                     output.motor_enable = Some(pin.into_output_low());
                 }
@@ -70,8 +69,7 @@ impl Fixture{
                     return Err(FixtureInitError)
                 }
             }
-            temp = output.gpio_api.get(MOTOR_DIRECTION_ADDR);
-            match temp{
+            match output.gpio_api.get(MOTOR_DIRECTION_ADDR){
                 Ok(pin) =>{
                     output.motor_direction = Some(pin.into_output_low());
                 }
@@ -80,8 +78,7 @@ impl Fixture{
                     return Err(FixtureInitError)
                 }
             }
-            temp = output.gpio_api.get(PISTON_ADDR);
-            match temp{
+            match output.gpio_api.get(PISTON_ADDR){
                 Ok(pin) =>{
                     output.piston_enable = Some(pin.into_output_low());
                 }
@@ -90,8 +87,7 @@ impl Fixture{
                     return Err(FixtureInitError)
                 }
             }
-            temp = output.gpio_api.get(UPPER_LIMIT_ADDR);
-            match temp{
+            match output.gpio_api.get(UPPER_LIMIT_ADDR){
                 Ok(pin) =>{
                     output.upper_limit = Some(pin.into_input_pulldown());
                 }
@@ -100,8 +96,7 @@ impl Fixture{
                     return Err(FixtureInitError)
                 }
             }
-            temp = output.gpio_api.get(LOWER_LIMIT_ADDR);
-            match temp{
+            match output.gpio_api.get(LOWER_LIMIT_ADDR){
                 Ok(pin) =>{
                     output.lower_limit = Some(pin.into_input_pulldown());
                 }
@@ -111,8 +106,7 @@ impl Fixture{
                 }
             }
 
-            let possible_run_pin = output.gpio_api.get(RUN_SWITCH_ADDR);
-            match possible_run_pin{
+            match output.gpio_api.get(RUN_SWITCH_ADDR){
                 Ok(run_pin) =>{
                     _ = run_pin.into_input_pulldown().set_async_interrupt(Trigger::Both, |switch_state|{
                         let mut move_allowed = executor::block_on(MOVE_LOCK.write());
