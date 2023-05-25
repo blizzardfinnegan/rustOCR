@@ -5,7 +5,7 @@ use std::{fs,path::Path,io::{stdin,stdout}, thread,time::Duration,sync::Arc};
 use chrono::{DateTime,Local};
 use gpio_facade::{Fixture,Direction};
 
-use crate::{image_facade::Camera, output_facade::TestState};
+use crate::{image_facade::{Camera, OCR}, output_facade::{TestState, OutputFile}};
 
 const VERSION:&str = "0.0.0-alpha.1";
 const DEFAULT_ITERATIONS:u64 = 10;
@@ -113,7 +113,7 @@ fn run_tests(fixture:&mut Option<Fixture>,available_cameras:&mut Vec<Camera>,cam
     let mut serials_set:bool = true;
     let mut active_cameras = Vec::new();
     let mut camera_serials = Vec::new();
-    for camera in available_cameras.iter_mut(){
+    for camera in available_cameras.iter(){
         if camera.is_active() && camera.get_serial().clone().trim().is_empty() {
             serials_set = false;
             break;
@@ -140,25 +140,59 @@ fn run_tests(fixture:&mut Option<Fixture>,available_cameras:&mut Vec<Camera>,cam
         safe_fixture.push_button();
     }
 
-    let current_state = Arc::new(TestState::new(camera_serials));
+    let current_state = TestState::new(camera_serials.clone());
+
+    let mut output_file = OutputFile::new(camera_serials);
 
     for i in 0..iteration_count{
         log::info!("Starting iteration {} of {}...",i+1,iteration_count);
         loop{
-            //let mut values = Vec::new();
             if let Some(safe_fixture) = fixture{
                 safe_fixture.goto_limit(Direction::Up);
                 safe_fixture.goto_limit(Direction::Down);
                 safe_fixture.push_button();
                 thread::sleep(Duration::from_secs(2));
             }
-            for camera in active_cameras.iter(){
-                let state = Arc::clone(&current_state);
-                thread::spawn(move||{
-                    let ocr_result = camera.parse_image(camera.complete_process());
-                    //values.push(ocr_result.clone());
-                    state.add_iteration(camera.get_serial().clone(), ocr_result);
-                });
+            let mut threads = Vec::new();
+            for camera in active_cameras.clone().into_iter(){
+                let local_camera = camera.clone();
+                threads.push(thread::spawn(move||{
+                    local_camera.complete_process()
+                }));
+            }
+            let mut ocr = OCR::new();
+            let mut retry = false;
+            for thread in threads.into_iter(){
+                match thread.join(){
+                    Ok(image_location) => {
+                        let result = ocr.parse_image(image_location.clone());
+                        if result < 10.0 || result > 100.0 {
+                            retry = true;
+                        }
+                        for camera in active_cameras.clone().into_iter(){
+                            if image_location.contains(&camera.get_serial().clone()){
+                                current_state.add_iteration(camera.get_serial().clone(), result);
+                                log::info!("Parsed image from camera {}: {}",
+                                    camera.get_serial().clone(),result);
+                            }
+                        }
+                    },
+                    Err(_) =>{}
+                }
+            }
+            if retry { 
+                log::warn!("Bad OCR reading! Ignoring current values, and resetting DUTs...");
+                if let Some(safe_fixture) = fixture{
+                    safe_fixture.goto_limit(Direction::Up);
+                    log::info!("Waiting for 20 seconds to allow devices to fall asleep.");
+                    thread::sleep(Duration::from_secs(20));
+                    safe_fixture.push_button();
+                }
+                continue; 
+            } 
+            else {
+                output_file.write_values(&current_state, None, None);
+                break;
             }
         }
     }

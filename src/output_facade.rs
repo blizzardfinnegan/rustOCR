@@ -69,7 +69,7 @@ impl OutputFile{
         }
     }
     
-    pub fn write_values(&mut self, current_state:TestState,mut upper_bound:Option<f64>,mut lower_bound:Option<f64>){
+    pub fn write_values(&mut self, current_state:&TestState,mut upper_bound:Option<f64>,mut lower_bound:Option<f64>){
         if upper_bound == None{
             upper_bound = Some(DEFAULT_UPPER);
         }

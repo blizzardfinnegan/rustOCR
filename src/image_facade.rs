@@ -21,15 +21,32 @@ const CROP_HEIGHT:&str = "crop height";
 const THRESHOLD:&str = "threshold value";
 const COMPOSITE_FRAMES:u16 = 5;
 
+#[derive(Clone)]
 pub struct Camera{
     settings: Config,
     camera: FrameGrabber,
     name: String,
     serial: String,
-    ocr: LepTess,
     active: bool
 }
 
+pub struct OCR{
+    ocr:LepTess
+}
+
+impl OCR{
+    pub fn new() -> Self{
+        let ocr = LepTess::new(Some("tessdata"), "Pro6_temp_test").unwrap();
+        Self{ ocr }
+    }
+
+    pub fn parse_image(&mut self, file_location:String) -> f64{
+        _ = self.ocr.set_image(file_location);
+        return str::parse(&self.ocr.get_utf8_text().unwrap()).unwrap()
+    }
+}
+
+#[derive(Clone)]
 struct FrameGrabber{
     image_queue: Arc<Mutex<VecDeque<Mat>>>,
 }
@@ -101,13 +118,10 @@ impl Camera{
 
         let name = camera_name.split('-').last().unwrap().to_string();
 
-        let ocr = LepTess::new(Some("tessdata"), "Pro6_temp_test").unwrap();
-
         Some(Self{
             settings,
             camera: frame_grabber,
             name,
-            ocr,
             active: true,
             serial:String::new()
         })
@@ -192,11 +206,6 @@ impl Camera{
     pub fn activate(&mut self)  { self.active = true; }
     pub fn is_active(&self) -> bool { self.active }
 
-    pub fn parse_image(&mut self, file_location:String) -> f64{
-        _ = self.ocr.set_image(file_location);
-        return str::parse(&self.ocr.get_utf8_text().unwrap()).unwrap()
-    }
-
-    pub fn get_serial(&mut self) -> String { self.serial.clone() }
+    pub fn get_serial(&self) -> String { self.serial.clone() }
     pub fn set_serial(&mut self, new_name:String) { self.serial = new_name; }
 }
